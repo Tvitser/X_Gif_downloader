@@ -1,5 +1,5 @@
 {
-  "name": "x_gif_downloader",
+  "name": "x-gif-downloader",
   "version": "1.0.0",
   "description": "Chrome extension that adds GIF download buttons to X posts and converts the backing MP4 into GIF.",
   "private": true,

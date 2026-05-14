@@ -8,6 +8,7 @@
   root.XGifEncoder = api;
 })(typeof globalThis !== "undefined" ? globalThis : self, function buildApi() {
   const WEB_SAFE_LEVELS = [0, 51, 102, 153, 204, 255];
+  const MAX_FRAME_DELAY_CS = 6000;
   let cachedPalette;
 
   function getPalette() {
@@ -225,7 +226,7 @@
 
       const indexedPixels = indexPixels(frame.pixels);
       const encodedImageData = lzwEncode(indexedPixels, minimumCodeSize);
-      const frameDelay = clamp(Math.round(frame.delayCs ?? delayCs), 2, 6000);
+      const frameDelay = clamp(Math.round(frame.delayCs ?? delayCs), 2, MAX_FRAME_DELAY_CS);
 
       bytes.push(0x21, 0xf9, 0x04, 0x00);
       pushShort(frameDelay);

@@ -41,7 +41,7 @@
 
   function buildFileName(videoUrl) {
     const parts = videoUrl.split("/");
-    const lastPart = parts[parts.length - 1]?.split("?")[0] || `x-gif-${Date.now()}.mp4`;
+    const lastPart = parts[parts.length - 1]?.split("?")[0] || `x-gif-${Date.now()}`;
     return lastPart.replace(/\.mp4$/i, ".gif");
   }
 
