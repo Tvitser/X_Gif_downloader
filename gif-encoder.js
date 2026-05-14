@@ -300,12 +300,12 @@
     if (typeof video.requestVideoFrameCallback === "function") {
       const renderState = await new Promise((resolve, reject) => {
         let settled = false;
-        let callbackId = null;
+        let frameCallbackId = null;
         const timeoutId = setTimeout(handleTimeout, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
-          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== null) {
-            video.cancelVideoFrameCallback(callbackId);
+          if (typeof video.cancelVideoFrameCallback === "function" && frameCallbackId !== null) {
+            video.cancelVideoFrameCallback(frameCallbackId);
           }
           clearTimeout(timeoutId);
           video.removeEventListener("error", handleError);
@@ -342,13 +342,14 @@
         }
 
         video.addEventListener("error", handleError, { once: true });
-        callbackId = video.requestVideoFrameCallback(() => finish());
+        frameCallbackId = video.requestVideoFrameCallback(() => finish());
       });
 
       if (renderState === "frame") {
         return;
       }
 
+      // The promise above only resolves to "frame" or "timeout".
       await waitForNextPaint();
     }
 
