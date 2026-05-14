@@ -8,16 +8,23 @@
   const BUTTON_CLASS = "xgif-download-button";
   const ACTION_ITEM_CLASS = "xgif-download-action";
   const PROCESSED_MARKER = "xgifDownloadAttached";
-  const ACTION_PANEL_SELECTORS = [
+  const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="retweet"]',
     '[data-testid="like"]',
     '[data-testid="bookmark"]',
-    '[data-testid="share"]',
+    '[data-testid="share"]'
+  ];
+  const ACTION_PANEL_ARIA_SELECTORS = [
     '[aria-label*="Reply"]',
     '[aria-label*="Repost"]',
     '[aria-label*="Like"]'
   ];
+  const ACTION_PANEL_SELECTOR = [
+    ...ACTION_PANEL_TEST_ID_SELECTORS,
+    ...ACTION_PANEL_ARIA_SELECTORS
+  ].join(", ");
+  const SHARE_ACTION_SELECTOR = '[data-testid="share"]';
 
   function getPostScope(video) {
     return (
@@ -48,7 +55,7 @@
   }
 
   function isActionPanel(group) {
-    return ACTION_PANEL_SELECTORS.some((selector) => group.querySelector(selector));
+    return Boolean(group.querySelector(ACTION_PANEL_SELECTOR));
   }
 
   function getActionPanel(video) {
@@ -165,7 +172,7 @@
     }
 
     const actionItem = createActionItem(video);
-    const shareAction = actionPanel.querySelector('[data-testid="share"]');
+    const shareAction = actionPanel.querySelector(SHARE_ACTION_SELECTOR);
 
     if (shareAction) {
       actionPanel.insertBefore(actionItem, shareAction);
