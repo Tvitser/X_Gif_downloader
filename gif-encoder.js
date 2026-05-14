@@ -300,13 +300,13 @@
     if (typeof video.requestVideoFrameCallback === "function") {
       const renderState = await new Promise((resolve, reject) => {
         let settled = false;
-        let callbackId;
+        let callbackId = null;
         const timeoutId = setTimeout(handleTimeout, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
           clearTimeout(timeoutId);
           video.removeEventListener("error", handleError);
-          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== undefined) {
+          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== null) {
             video.cancelVideoFrameCallback(callbackId);
           }
         }
