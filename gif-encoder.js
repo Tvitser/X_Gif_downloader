@@ -283,14 +283,32 @@
   }
 
   async function waitForRenderedFrame(video) {
+    async function waitForNextPaint() {
+      await new Promise((resolve) => {
+        // Older browsers do not expose frame-level callbacks for paused/seeked video.
+        // Falling back to the next paint avoids hanging conversion, even though it cannot
+        // guarantee the same frame accuracy as requestVideoFrameCallback.
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+          return;
+        }
+
+        setTimeout(resolve, 0);
+      });
+    }
+
     if (typeof video.requestVideoFrameCallback === "function") {
-      await new Promise((resolve, reject) => {
+      const renderState = await new Promise((resolve, reject) => {
         let settled = false;
+        let callbackId;
         const timeoutId = setTimeout(handleTimeout, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
           clearTimeout(timeoutId);
           video.removeEventListener("error", handleError);
+          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== undefined) {
+            video.cancelVideoFrameCallback(callbackId);
+          }
         }
 
         function finish() {
@@ -300,7 +318,7 @@
 
           settled = true;
           cleanup();
-          resolve();
+          resolve("frame");
         }
 
         function handleError() {
@@ -320,26 +338,22 @@
 
           settled = true;
           cleanup();
-          reject(new Error(`Video frame render timeout after ${FRAME_RENDER_TIMEOUT_MS}ms.`));
+          resolve("timeout");
         }
 
         video.addEventListener("error", handleError, { once: true });
-        video.requestVideoFrameCallback(() => finish());
+        callbackId = video.requestVideoFrameCallback(() => finish());
       });
-      return;
-    }
 
-    await new Promise((resolve) => {
-      // Older browsers do not expose frame-level callbacks for paused/seeked video.
-      // Falling back to the next paint avoids hanging conversion, even though it cannot
-      // guarantee the same frame accuracy as requestVideoFrameCallback.
-      if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(() => resolve());
+      if (renderState === "frame") {
         return;
       }
 
-      setTimeout(resolve, 0);
-    });
+      await waitForNextPaint();
+      return;
+    }
+
+    await waitForNextPaint();
   }
 
   async function seekVideo(video, timeInSeconds) {
