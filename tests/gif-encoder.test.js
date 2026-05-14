@@ -37,11 +37,11 @@ function decodeLzw(data, minimumCodeSize, pixelCount) {
   function readCode(size) {
     let code = 0;
 
-    for (let index = 0; index < size; index += 1) {
-      const absoluteBit = bitOffset + index;
+    for (let bitPosition = 0; bitPosition < size; bitPosition += 1) {
+      const absoluteBit = bitOffset + bitPosition;
       const byteIndex = Math.floor(absoluteBit / 8);
       const bitIndex = absoluteBit % 8;
-      code |= ((data[byteIndex] >> bitIndex) & 1) << index;
+      code |= ((data[byteIndex] >> bitIndex) & 1) << bitPosition;
     }
 
     bitOffset += size;
@@ -51,8 +51,8 @@ function decodeLzw(data, minimumCodeSize, pixelCount) {
   function resetDictionary() {
     dictionary = [];
 
-    for (let index = 0; index < clearCode; index += 1) {
-      dictionary[index] = [index];
+    for (let paletteIndex = 0; paletteIndex < clearCode; paletteIndex += 1) {
+      dictionary[paletteIndex] = [paletteIndex];
     }
 
     dictionary[clearCode] = null;
