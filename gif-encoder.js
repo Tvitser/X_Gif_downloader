@@ -330,6 +330,9 @@
     }
 
     await new Promise((resolve) => {
+      // Older browsers do not expose frame-level callbacks for paused/seeked video.
+      // Falling back to the next paint avoids hanging conversion, even though it cannot
+      // guarantee the same frame accuracy as requestVideoFrameCallback.
       if (typeof requestAnimationFrame === "function") {
         requestAnimationFrame(() => resolve());
         return;
