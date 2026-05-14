@@ -283,8 +283,37 @@
 
   async function waitForRenderedFrame(video) {
     if (typeof video.requestVideoFrameCallback === "function") {
-      await new Promise((resolve) => {
-        video.requestVideoFrameCallback(() => resolve());
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const timeoutId = setTimeout(finish, 250);
+
+        function cleanup() {
+          clearTimeout(timeoutId);
+          video.removeEventListener("error", handleError);
+        }
+
+        function finish() {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          cleanup();
+          resolve();
+        }
+
+        function handleError() {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          cleanup();
+          reject(new Error("Failed while waiting for a rendered video frame."));
+        }
+
+        video.addEventListener("error", handleError, { once: true });
+        video.requestVideoFrameCallback(() => finish());
       });
       return;
     }
