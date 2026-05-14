@@ -7,7 +7,7 @@ Chrome extension that adds a **Download GIF** button to GIF posts on X/Twitter, 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select `/home/runner/work/X_Gif_downloader/X_Gif_downloader`
+4. Select the folder where you cloned or downloaded this extension
 
 ## How it works
 
