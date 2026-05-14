@@ -273,14 +273,41 @@
     });
   }
 
-  async function seekVideo(video, timeInSeconds) {
-    if (Math.abs(video.currentTime - timeInSeconds) < 0.001 && video.readyState >= 2) {
+  async function waitForLoadedFrame(video) {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       return;
     }
 
-    const seeked = waitForEvent(video, "seeked", "error");
-    video.currentTime = timeInSeconds;
-    await seeked;
+    await waitForEvent(video, "loadeddata", "error");
+  }
+
+  async function waitForRenderedFrame(video) {
+    if (typeof video.requestVideoFrameCallback === "function") {
+      await new Promise((resolve) => {
+        video.requestVideoFrameCallback(() => resolve());
+      });
+      return;
+    }
+
+    await new Promise((resolve) => {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => resolve());
+        return;
+      }
+
+      setTimeout(resolve, 0);
+    });
+  }
+
+  async function seekVideo(video, timeInSeconds) {
+    if (Math.abs(video.currentTime - timeInSeconds) >= 0.001) {
+      const seeked = waitForEvent(video, "seeked", "error");
+      video.currentTime = timeInSeconds;
+      await seeked;
+    }
+
+    await waitForLoadedFrame(video);
+    await waitForRenderedFrame(video);
   }
 
   async function convertVideoBlobToGifBlob(blob, options = {}) {
@@ -304,6 +331,7 @@
       video.src = sourceUrl;
       video.load();
       await metadataReady;
+      await waitForLoadedFrame(video);
 
       const sourceWidth = video.videoWidth;
       const sourceHeight = video.videoHeight;
