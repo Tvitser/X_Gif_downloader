@@ -286,7 +286,7 @@
     if (typeof video.requestVideoFrameCallback === "function") {
       await new Promise((resolve, reject) => {
         let settled = false;
-        const timeoutId = setTimeout(finish, FRAME_RENDER_TIMEOUT_MS);
+        const timeoutId = setTimeout(handleTimeout, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
           clearTimeout(timeoutId);
@@ -311,6 +311,16 @@
           settled = true;
           cleanup();
           reject(new Error("Failed while waiting for a rendered video frame."));
+        }
+
+        function handleTimeout() {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          cleanup();
+          reject(new Error(`Video frame render timeout after ${FRAME_RENDER_TIMEOUT_MS}ms.`));
         }
 
         video.addEventListener("error", handleError, { once: true });

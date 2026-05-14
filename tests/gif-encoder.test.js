@@ -49,7 +49,7 @@ function decodeLzw(data, minimumCodeSize, pixelCount) {
   }
 
   function resetDictionary() {
-    dictionary = Array.from({ length: clearCode }, (_, index) => [index]);
+    dictionary = Array.from({ length: clearCode }, (unusedValue, index) => [index]);
     dictionary[clearCode] = null;
     dictionary[endCode] = null;
     nextCode = endCode + 1;
