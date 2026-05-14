@@ -9,6 +9,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : self, function buildApi() {
   const WEB_SAFE_LEVELS = [0, 51, 102, 153, 204, 255];
   const MAX_FRAME_DELAY_CS = 6000;
+  const FRAME_RENDER_TIMEOUT_MS = 250;
   let cachedPalette;
 
   function getPalette() {
@@ -285,7 +286,7 @@
     if (typeof video.requestVideoFrameCallback === "function") {
       await new Promise((resolve, reject) => {
         let settled = false;
-        const timeoutId = setTimeout(finish, 250);
+        const timeoutId = setTimeout(finish, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
           clearTimeout(timeoutId);
