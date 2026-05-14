@@ -6,21 +6,29 @@
   }
 
   const BUTTON_CLASS = "xgif-download-button";
+  const ACTION_ITEM_CLASS = "xgif-download-action";
   const PROCESSED_MARKER = "xgifDownloadAttached";
+  const ACTION_PANEL_SELECTORS = [
+    '[data-testid="reply"]',
+    '[data-testid="retweet"]',
+    '[data-testid="like"]',
+    '[data-testid="bookmark"]',
+    '[data-testid="share"]',
+    '[aria-label*="Reply"]',
+    '[aria-label*="Repost"]',
+    '[aria-label*="Like"]'
+  ];
 
-  function getOverlayContainer(video) {
+  function getPostScope(video) {
     return (
-      video.closest('[data-testid="videoComponent"]') ||
-      video.closest('[data-testid="videoPlayer"]') ||
+      video.closest("article") ||
+      video.closest('[data-testid="cellInnerDiv"]') ||
       video.parentElement
     );
   }
 
   function hasGifBadge(video) {
-    const scope =
-      video.closest("article") ||
-      video.closest('[data-testid="cellInnerDiv"]') ||
-      video.parentElement;
+    const scope = getPostScope(video);
 
     if (!scope) {
       return false;
@@ -37,6 +45,20 @@
     ];
 
     return sourceUrls.find((url) => typeof url === "string" && /^https?:/.test(url) && url.includes(".mp4"));
+  }
+
+  function isActionPanel(group) {
+    return ACTION_PANEL_SELECTORS.some((selector) => group.querySelector(selector));
+  }
+
+  function getActionPanel(video) {
+    const scope = getPostScope(video);
+
+    if (!scope) {
+      return null;
+    }
+
+    return Array.from(scope.querySelectorAll('[role="group"]')).find(isActionPanel) || null;
   }
 
   function buildFileName(videoUrl) {
@@ -118,6 +140,15 @@
     return button;
   }
 
+  function createActionItem(video) {
+    const actionItem = document.createElement("div");
+
+    actionItem.className = ACTION_ITEM_CLASS;
+    actionItem.append(createButton(video));
+
+    return actionItem;
+  }
+
   function decorateVideo(video) {
     if (!(video instanceof HTMLVideoElement) || video.dataset[PROCESSED_MARKER]) {
       return;
@@ -127,17 +158,21 @@
       return;
     }
 
-    const overlayContainer = getOverlayContainer(video);
+    const actionPanel = getActionPanel(video);
 
-    if (!overlayContainer || overlayContainer.querySelector(`.${BUTTON_CLASS}`)) {
+    if (!actionPanel || actionPanel.querySelector(`.${BUTTON_CLASS}`)) {
       return;
     }
 
-    if (getComputedStyle(overlayContainer).position === "static") {
-      overlayContainer.style.position = "relative";
+    const actionItem = createActionItem(video);
+    const shareAction = actionPanel.querySelector('[data-testid="share"]');
+
+    if (shareAction) {
+      actionPanel.insertBefore(actionItem, shareAction);
+    } else {
+      actionPanel.append(actionItem);
     }
 
-    overlayContainer.append(createButton(video));
     video.dataset[PROCESSED_MARKER] = "true";
   }
 
