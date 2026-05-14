@@ -349,7 +349,7 @@
         return;
       }
 
-      // The promise above only resolves to "frame" or "timeout".
+      // When timeout occurs (no frame callback received), fall back to next-paint rendering.
       await waitForNextPaint();
     }
 
