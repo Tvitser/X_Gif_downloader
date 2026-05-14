@@ -300,11 +300,11 @@
     if (typeof video.requestVideoFrameCallback === "function") {
       const renderState = await new Promise((resolve, reject) => {
         let settled = false;
-        let callbackId = undefined;
+        let callbackId = null;
         const timeoutId = setTimeout(handleTimeout, FRAME_RENDER_TIMEOUT_MS);
 
         function cleanup() {
-          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== undefined) {
+          if (typeof video.cancelVideoFrameCallback === "function" && callbackId !== null) {
             video.cancelVideoFrameCallback(callbackId);
           }
           clearTimeout(timeoutId);
@@ -350,7 +350,6 @@
       }
 
       await waitForNextPaint();
-      return;
     }
 
     await waitForNextPaint();
