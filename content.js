@@ -21,12 +21,17 @@
   const DOWNLOAD_TYPE_ATTRIBUTE = "data-xgif-download-type";
   const GIF_PROCESSED_MARKER = "xgifDownloadGifAttached";
   const HLS_PROCESSED_MARKER = "xgifDownloadHlsAttached";
+  const NO_PANEL_MARKER = "xgifDownloadNoPanel";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="retweet"]',
     '[data-testid="repost"]',
+    '[data-testid="unretweet"]',
+    '[data-testid="unrepost"]',
     '[data-testid="like"]',
+    '[data-testid="unlike"]',
     '[data-testid="bookmark"]',
+    '[data-testid="unbookmark"]',
     '[data-testid="share"]'
   ];
   const ACTION_PANEL_ARIA_SELECTORS = [
@@ -54,6 +59,7 @@
 
   function getPostScope(video) {
     return (
+      video.closest('[data-testid="tweet"]') ||
       video.closest("article") ||
       video.closest('[data-testid="cellInnerDiv"]') ||
       video.parentElement
@@ -109,6 +115,38 @@
     return Boolean(group.querySelector(ACTION_PANEL_SELECTOR));
   }
 
+  function findActionPanelFromButton(actionButton) {
+    let node = actionButton.parentElement;
+
+    while (node && node !== document.body) {
+      if (node.querySelectorAll(ACTION_PANEL_SELECTOR).length >= 2) {
+        return node;
+      }
+
+      node = node.parentElement;
+    }
+
+    return null;
+  }
+
+  function findActionButton(startNode) {
+    let node = startNode;
+
+    while (node && node !== document.body) {
+      if (node.querySelector) {
+        const actionButton = node.querySelector(ACTION_PANEL_SELECTOR);
+
+        if (actionButton) {
+          return actionButton;
+        }
+      }
+
+      node = node.parentElement;
+    }
+
+    return null;
+  }
+
   function getActionPanel(video) {
     const scope = getPostScope(video);
 
@@ -116,7 +154,7 @@
       return null;
     }
 
-    const actionButton = scope.querySelector(ACTION_PANEL_SELECTOR);
+    const actionButton = findActionButton(scope);
 
     if (!actionButton) {
       return null;
@@ -125,6 +163,7 @@
     return (
       actionButton.closest('[role="group"]') ||
       Array.from(scope.querySelectorAll('[role="group"]')).find(isActionPanel) ||
+      findActionPanelFromButton(actionButton) ||
       actionButton.parentElement
     );
   }
@@ -357,6 +396,10 @@
     const actionPanel = getActionPanel(video);
 
     if (!actionPanel) {
+      if (!video.dataset[NO_PANEL_MARKER]) {
+        console.debug(`${LOG_PREFIX} Action panel not found for video.`, video);
+        video.dataset[NO_PANEL_MARKER] = "true";
+      }
       return;
     }
 
@@ -378,6 +421,7 @@
 
       insertActionItem(actionPanel, actionItem);
       video.dataset[GIF_PROCESSED_MARKER] = "true";
+      console.info(`${LOG_PREFIX} Added GIF download button.`, video);
       return;
     }
 
@@ -403,6 +447,7 @@
 
       insertActionItem(actionPanel, actionItem);
       video.dataset[HLS_PROCESSED_MARKER] = "true";
+      console.info(`${LOG_PREFIX} Added MP4 download button.`, video);
     }
   }
 
