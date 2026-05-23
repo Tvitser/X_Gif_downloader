@@ -608,39 +608,39 @@
     }
   }
 
+  function scanPosts(rootNode = document) {
+    if (!(rootNode instanceof Element) && rootNode !== document) {
+      return;
+    }
+
+    const posts =
+      rootNode === document
+        ? rootNode.querySelectorAll(POST_SELECTOR)
+        : rootNode.matches(POST_SELECTOR)
+          ? [rootNode]
+          : rootNode.querySelectorAll(POST_SELECTOR);
+
+    posts.forEach((post) => {
+      logOnce(post, POST_LOGGED_MARKER, console.debug, `Post found "${post.tagName.toLowerCase()}".`, post);
+
+      const video = post.querySelector("video");
+
+      if (video) {
+        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found "video tag".', video);
+        decorateVideo(video);
+        return;
+      }
+
+      logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "post doesnt contain gif/video.", post);
+    });
+  }
+
   function scan(rootNode = document) {
     scanPosts(rootNode);
 
     if (rootNode instanceof HTMLVideoElement) {
       decorateVideo(rootNode);
       return;
-    }
-
-    function scanPosts(rootNode = document) {
-      if (!(rootNode instanceof Element) && rootNode !== document) {
-        return;
-      }
-
-      const posts =
-        rootNode === document
-          ? rootNode.querySelectorAll(POST_SELECTOR)
-          : rootNode.matches(POST_SELECTOR)
-            ? [rootNode]
-            : rootNode.querySelectorAll(POST_SELECTOR);
-
-      posts.forEach((post) => {
-        logOnce(post, POST_LOGGED_MARKER, console.debug, `Post found "${post.tagName.toLowerCase()}".`, post);
-
-        const video = post.querySelector("video");
-
-        if (video) {
-          logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found "video tag".', video);
-          decorateVideo(video);
-          return;
-        }
-
-        logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "post doesnt contain gif/video.", post);
-      });
     }
 
     if (rootNode instanceof HTMLSourceElement) {
