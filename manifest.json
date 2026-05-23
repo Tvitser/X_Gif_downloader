@@ -2,11 +2,12 @@
   "manifest_version": 3,
   "name": "X GIF Downloader",
   "version": "1.0.0",
-  "description": "Adds a download button to X GIF posts and converts the underlying MP4 into a GIF.",
+  "description": "Adds download buttons to X GIF and video posts, converting MP4/HLS media to files.",
   "host_permissions": [
     "https://x.com/*",
     "https://twitter.com/*",
-    "https://video.twimg.com/*"
+    "https://video.twimg.com/*",
+    "https://*.twimg.com/*"
   ],
   "content_scripts": [
     {
@@ -15,6 +16,7 @@
         "https://twitter.com/*"
       ],
       "js": [
+        "hls-utils.js",
         "gif-encoder.js",
         "content.js"
       ],

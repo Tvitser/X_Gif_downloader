@@ -1,6 +1,6 @@
 # X_Gif_downloader
 
-Chrome extension that adds a **Download GIF** button to GIF posts on X/Twitter, fetches the underlying MP4 file, and converts it into an animated GIF directly in the browser.
+Chrome extension that adds **Download GIF** and **Download MP4** buttons to X/Twitter posts, fetching MP4 or HLS streams and saving them directly in the browser.
 
 ## Install
 
@@ -13,6 +13,7 @@ Chrome extension that adds a **Download GIF** button to GIF posts on X/Twitter, 
 
 - watches X/Twitter pages for GIF posts
 - adds an overlay **Download GIF** button to each detected GIF video
-- downloads the backing MP4 asset
-- converts the video frames into a GIF in the browser
-- saves the generated `.gif` file to your machine
+- adds a **Download MP4** button to HLS-backed video posts
+- downloads the backing MP4 or HLS segments
+- converts GIF videos into a GIF in the browser
+- saves the generated `.gif` or `.mp4` file to your machine
