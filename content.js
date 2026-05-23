@@ -273,7 +273,7 @@
 
     if (!playlistUrl) {
       setButtonState(button, {
-        text: "MP4 unavailable",
+        text: "Stream unavailable",
         disabled: false,
         title: "Could not find an HLS playlist for this video."
       });
