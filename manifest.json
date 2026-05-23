@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "X GIF Downloader",
+  "version": "1.0.0",
+  "description": "Adds a download button to X GIF posts and converts the underlying MP4 into a GIF.",
+  "host_permissions": [
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://video.twimg.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "gif-encoder.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
