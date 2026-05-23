@@ -8,6 +8,7 @@
 
   const BUTTON_CLASS = "xgif-download-button";
   const ACTION_ITEM_CLASS = "xgif-download-action";
+  const DOWNLOAD_TYPE_ATTRIBUTE = "data-xgif-download-type";
   const GIF_PROCESSED_MARKER = "xgifDownloadGifAttached";
   const HLS_PROCESSED_MARKER = "xgifDownloadHlsAttached";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
@@ -76,7 +77,8 @@
     ];
 
     const m3u8Url = sourceUrls.find(
-      (url) => typeof url === "string" && /^https?:/.test(url) && url.includes(".m3u8")
+      (url) =>
+        typeof url === "string" && /^https?:/.test(url) && url.toLowerCase().includes(".m3u8")
     );
 
     return normalizeUrl(m3u8Url);
@@ -105,8 +107,8 @@
       return `x-download-${Date.now()}${ext}`;
     }
 
-    const baseName = lastPart.replace(/\.[^/.]+$/, "") || `x-download-${Date.now()}`;
-    return `${baseName}${ext}`;
+    const baseName = lastPart.replace(/\.[^/.]+$/, "");
+    return `${baseName || `x-download-${Date.now()}`}${ext}`;
   }
 
   function triggerDownload(blob, fileName) {
@@ -278,11 +280,12 @@
     }
   }
 
-  function createButton({ label, title, onClick }) {
+  function createButton({ label, title, onClick, type }) {
     const button = document.createElement("button");
 
     button.type = "button";
     button.className = BUTTON_CLASS;
+    button.setAttribute(DOWNLOAD_TYPE_ATTRIBUTE, type);
     setButtonState(button, {
       text: label,
       disabled: false,
@@ -332,7 +335,8 @@
       const gifButton = createButton({
         label: "Download GIF",
         title: "Download this X GIF as an animated GIF file.",
-        onClick: (button) => handleGifDownload(video, button)
+        onClick: (button) => handleGifDownload(video, button),
+        type: "gif"
       });
       const actionItem = createActionItem(gifButton);
 
@@ -345,7 +349,7 @@
       !isGif &&
       hlsUtils &&
       !video.dataset[HLS_PROCESSED_MARKER] &&
-      !actionPanel.querySelector(`.${BUTTON_CLASS}`)
+      !actionPanel.querySelector(`[${DOWNLOAD_TYPE_ATTRIBUTE}="hls"]`)
     ) {
       const hlsUrl = getM3u8Url(video);
 
@@ -356,7 +360,8 @@
       const hlsButton = createButton({
         label: "Download MP4",
         title: "Download this X video as an MP4 file.",
-        onClick: (button) => handleHlsDownload(video, button)
+        onClick: (button) => handleHlsDownload(video, button),
+        type: "hls"
       });
       const actionItem = createActionItem(hlsButton);
 

@@ -87,8 +87,9 @@
       return null;
     }
 
-    return variants.reduce((best, candidate) =>
-      candidate.bandwidth > (best?.bandwidth ?? 0) ? candidate : best
+    return variants.reduce(
+      (best, candidate) => (candidate.bandwidth > (best?.bandwidth ?? 0) ? candidate : best),
+      null
     );
   }
 
