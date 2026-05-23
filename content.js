@@ -621,16 +621,6 @@
         return;
       }
 
-      if (blobUrl) {
-        logOnce(
-          video,
-          "xgifDownloadBlobNotDownloadable",
-          console.debug,
-          "Blob URL detected but cannot be downloaded. Blob URLs are browser-internal memory references and cannot be accessed via HTTP. The video source may need to be captured directly from the network before X converts it to a blob.",
-          video
-        );
-      }
-
       logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4 or HLS source found for video.", video);
     }
   }
