@@ -26,6 +26,10 @@
   const NO_ACTION_BUTTON_MARKER = "xgifDownloadNoActionButton";
   const NO_MEDIA_MARKER = "xgifDownloadNoMedia";
   const DEBUG_LOGGED_MARKER = "xgifDownloadDebugLogged";
+  const POST_LOGGED_MARKER = "xgifDownloadPostLogged";
+  const POST_NO_MEDIA_MARKER = "xgifDownloadPostNoMedia";
+  const POST_HAS_MEDIA_MARKER = "xgifDownloadPostHasMedia";
+  const MEDIA_CANDIDATES_MARKER = "xgifDownloadMediaCandidatesLogged";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="comment"]',
@@ -52,6 +56,13 @@
     ...ACTION_PANEL_ARIA_SELECTORS
   ].join(", ");
   const SHARE_ACTION_SELECTOR = '[data-testid="share"]';
+  const POST_SELECTOR = [
+    '[data-testid="tweet"]',
+    '[data-testid="tweetDetail"]',
+    '[data-testid="cellInnerDiv"]',
+    '[role="article"]',
+    "article"
+  ].join(", ");
   let loggedEmptyScan = false;
 
   function logOnce(target, marker, logger, message, ...details) {
@@ -110,29 +121,72 @@
     return Array.from(scope.querySelectorAll("span")).some((span) => span.textContent?.trim() === "GIF");
   }
 
-  function getMp4Url(video) {
-    const sourceUrls = [
-      video.currentSrc,
-      video.src,
-      ...Array.from(video.querySelectorAll("source")).map((source) => source.src)
-    ];
+  function collectMediaUrls(video, scope) {
+    const urls = new Set();
 
-    return sourceUrls.find((url) => typeof url === "string" && /^https?:/.test(url) && url.includes(".mp4"));
+    const addUrl = (value) => {
+      if (typeof value !== "string") {
+        return;
+      }
+
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        return;
+      }
+
+      urls.add(trimmed);
+    };
+
+    if (video) {
+      addUrl(video.currentSrc);
+      addUrl(video.src);
+      addUrl(video.getAttribute("src"));
+      addUrl(video.getAttribute("data-src"));
+      addUrl(video.getAttribute("data-url"));
+      video.querySelectorAll("source").forEach((source) => {
+        addUrl(source.src);
+        addUrl(source.getAttribute("src"));
+        addUrl(source.getAttribute("data-src"));
+        addUrl(source.getAttribute("data-url"));
+      });
+    }
+
+    const scopeRoot = scope || video?.parentElement;
+
+    if (scopeRoot) {
+      scopeRoot.querySelectorAll("[src], [href], [data-src], [data-url]").forEach((element) => {
+        addUrl(element.getAttribute("src"));
+        addUrl(element.getAttribute("href"));
+        addUrl(element.getAttribute("data-src"));
+        addUrl(element.getAttribute("data-url"));
+      });
+    }
+
+    return Array.from(urls);
   }
 
-  function getM3u8Url(video) {
-    const sourceUrls = [
-      video.currentSrc,
-      video.src,
-      ...Array.from(video.querySelectorAll("source")).map((source) => source.src)
-    ];
+  function findMp4Url(sourceUrls) {
+    return sourceUrls.find(
+      (url) => typeof url === "string" && /^https?:/.test(url) && url.toLowerCase().includes(".mp4")
+    );
+  }
 
+  function findM3u8Url(sourceUrls) {
     const m3u8Url = sourceUrls.find(
       (url) =>
         typeof url === "string" && /^https?:/.test(url) && url.toLowerCase().includes(".m3u8")
     );
 
     return normalizeUrl(m3u8Url);
+  }
+
+  function getMp4Url(video, scope) {
+    return findMp4Url(collectMediaUrls(video, scope));
+  }
+
+  function getM3u8Url(video, scope) {
+    return findM3u8Url(collectMediaUrls(video, scope));
   }
 
   function isActionPanel(group) {
@@ -306,7 +360,7 @@
   }
 
   async function handleGifDownload(video, button) {
-    const videoUrl = getMp4Url(video);
+    const videoUrl = getMp4Url(video, getPostScope(video));
 
     if (!videoUrl) {
       setButtonState(button, {
@@ -342,7 +396,7 @@
   }
 
   async function handleHlsDownload(video, button) {
-    const playlistUrl = getM3u8Url(video);
+    const playlistUrl = getM3u8Url(video, getPostScope(video));
 
     if (!playlistUrl) {
       setButtonState(button, {
@@ -385,7 +439,7 @@
   }
 
   async function handleMp4Download(video, button) {
-    const mp4Url = getMp4Url(video);
+    const mp4Url = getMp4Url(video, getPostScope(video));
 
     if (!mp4Url) {
       setButtonState(button, {
@@ -465,8 +519,9 @@
 
     const scope = getPostScope(video);
     const isGif = hasGifBadge(video);
-    const mp4Url = getMp4Url(video);
-    const m3u8Url = getM3u8Url(video);
+    const mediaUrls = collectMediaUrls(video, scope);
+    const mp4Url = findMp4Url(mediaUrls);
+    const m3u8Url = findM3u8Url(mediaUrls);
 
     logOnce(
       video,
@@ -474,6 +529,14 @@
       console.debug,
       `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(m3u8Url)}).`,
       video
+    );
+
+    logOnce(
+      video,
+      MEDIA_CANDIDATES_MARKER,
+      console.debug,
+      `Media URLs found (${mediaUrls.length}).`,
+      mediaUrls
     );
 
     const actionPanel = getActionPanel(video, scope);
@@ -546,9 +609,38 @@
   }
 
   function scan(rootNode = document) {
+    scanPosts(rootNode);
+
     if (rootNode instanceof HTMLVideoElement) {
       decorateVideo(rootNode);
       return;
+    }
+
+    function scanPosts(rootNode = document) {
+      if (!(rootNode instanceof Element) && rootNode !== document) {
+        return;
+      }
+
+      const posts =
+        rootNode === document
+          ? rootNode.querySelectorAll(POST_SELECTOR)
+          : rootNode.matches(POST_SELECTOR)
+            ? [rootNode]
+            : rootNode.querySelectorAll(POST_SELECTOR);
+
+      posts.forEach((post) => {
+        logOnce(post, POST_LOGGED_MARKER, console.debug, `Post found "${post.tagName.toLowerCase()}".`, post);
+
+        const video = post.querySelector("video");
+
+        if (video) {
+          logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found "video tag".', video);
+          decorateVideo(video);
+          return;
+        }
+
+        logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "post doesnt contain gif/video.", post);
+      });
     }
 
     if (rootNode instanceof HTMLSourceElement) {
@@ -597,6 +689,6 @@
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["src"]
+    attributeFilter: ["src", "data-src", "data-url", "href"]
   });
 })(globalThis);
