@@ -621,7 +621,19 @@
         return;
       }
 
-      logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4 or HLS source found for video.", video);
+      // If blob URLs exist but no downloadable sources, mark as processed but log the blob detection
+      if (blobUrls.length > 0) {
+        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        logOnce(
+          video,
+          "xgifDownloadBlobOnlyDetected",
+          console.info,
+          `Media detected with blob URLs only (not downloadable). Post has ${blobUrls.length} blob URL(s).`,
+          video
+        );
+      } else {
+        logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4, HLS, or blob source found for video.", video);
+      }
     }
   }
 
