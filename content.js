@@ -186,10 +186,6 @@
     return normalizeUrl(m3u8Url);
   }
 
-  function extractBlobUrl(urls) {
-    return urls.length > 0 ? urls[0] : null;
-  }
-
   function getMp4Url(video, scope) {
     const { httpUrls } = collectMediaUrls(video, scope);
     return findMp4Url(httpUrls);
@@ -198,11 +194,6 @@
   function getM3u8Url(video, scope) {
     const { httpUrls } = collectMediaUrls(video, scope);
     return findM3u8Url(httpUrls);
-  }
-
-  function getBlobUrl(video, scope) {
-    const { blobUrls } = collectMediaUrls(video, scope);
-    return extractBlobUrl(blobUrls);
   }
 
   function isActionPanel(group) {
@@ -375,50 +366,6 @@
     return new Blob(parts, { type: "video/mp4" });
   }
 
-  async function handleBlobDownload(video, button) {
-    const blobUrl = getBlobUrl(video, getPostScope(video));
-
-    if (!blobUrl) {
-      setButtonState(button, {
-        text: "Media unavailable",
-        disabled: false,
-        title: "Could not find media source for this video."
-      });
-      return;
-    }
-
-    setButtonState(button, {
-      text: "Downloading media…",
-      disabled: true,
-      title: "Downloading video from blob source."
-    });
-
-    try {
-      const response = await fetch(blobUrl);
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch blob: ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const fileName = buildFileName(blobUrl, blob.type.includes("video") ? ".mp4" : ".bin");
-
-      triggerDownload(blob, fileName);
-      setButtonState(button, {
-        text: "Downloaded",
-        disabled: false,
-        title: "Media downloaded successfully."
-      });
-    } catch (error) {
-      console.error("X blob download failed:", error);
-      setButtonState(button, {
-        text: "Retry download",
-        disabled: false,
-        title: error instanceof Error ? error.message : "Failed to download from blob source."
-      });
-    }
-  }
-
   async function handleGifDownload(video, button) {
     const videoUrl = getMp4Url(video, getPostScope(video));
 
@@ -582,13 +529,12 @@
     const { httpUrls, blobUrls } = collectMediaUrls(video, scope);
     const mp4Url = findMp4Url(httpUrls);
     const m3u8Url = findM3u8Url(httpUrls);
-    const blobUrl = extractBlobUrl(blobUrls);
 
     logOnce(
       video,
       DEBUG_LOGGED_MARKER,
       console.debug,
-      `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(m3u8Url)}, blob=${Boolean(blobUrl)}).`,
+      `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(m3u8Url)}, blob=${Boolean(blobUrls.length)}).`,
       video
     );
 
@@ -600,12 +546,12 @@
       { httpUrls, blobUrls }
     );
 
-    if (blobUrl) {
+    if (blobUrls.length > 0) {
       logOnce(
         video,
-        "xgifDownloadBlobUrlDetected",
-        console.info,
-        `Blob URL detected for video: ${blobUrl}. This is dynamically loaded media that may not be directly downloadable.`,
+        "xgifDownloadBlobUrlNotDownloadable",
+        console.debug,
+        `Blob URL detected: ${blobUrls[0]}. Blob URLs are browser-internal memory references and cannot be downloaded. The video source may need to be captured directly from the network before X converts it to a blob.`,
         video
       );
     }
@@ -617,7 +563,7 @@
     }
 
     const existingDownloadButton = actionPanel.querySelector(
-      `[${DOWNLOAD_TYPE_ATTRIBUTE}="gif"], [${DOWNLOAD_TYPE_ATTRIBUTE}="hls"], [${DOWNLOAD_TYPE_ATTRIBUTE}="mp4"], [${DOWNLOAD_TYPE_ATTRIBUTE}="blob"]`
+      `[${DOWNLOAD_TYPE_ATTRIBUTE}="gif"], [${DOWNLOAD_TYPE_ATTRIBUTE}="hls"], [${DOWNLOAD_TYPE_ATTRIBUTE}="mp4"]`
     );
 
     if (
@@ -676,21 +622,16 @@
       }
 
       if (blobUrl) {
-        const blobButton = createButton({
-          label: "Download Media",
-          title: "Download this video from blob source (experimental).",
-          onClick: (button) => handleBlobDownload(video, button),
-          type: "blob"
-        });
-        const actionItem = createActionItem(blobButton);
-
-        insertActionItem(actionPanel, actionItem);
-        video.dataset[HLS_PROCESSED_MARKER] = "true";
-        console.info(`${LOG_PREFIX} Added blob download button.`, video);
-        return;
+        logOnce(
+          video,
+          "xgifDownloadBlobNotDownloadable",
+          console.debug,
+          "Blob URL detected but cannot be downloaded. Blob URLs are browser-internal memory references and cannot be accessed via HTTP. The video source may need to be captured directly from the network before X converts it to a blob.",
+          video
+        );
       }
 
-      logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4, HLS, or blob source found for video.", video);
+      logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4 or HLS source found for video.", video);
     }
   }
 
