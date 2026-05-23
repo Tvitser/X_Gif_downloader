@@ -22,8 +22,13 @@
   const GIF_PROCESSED_MARKER = "xgifDownloadGifAttached";
   const HLS_PROCESSED_MARKER = "xgifDownloadHlsAttached";
   const NO_PANEL_MARKER = "xgifDownloadNoPanel";
+  const NO_SCOPE_MARKER = "xgifDownloadNoScope";
+  const NO_ACTION_BUTTON_MARKER = "xgifDownloadNoActionButton";
+  const NO_MEDIA_MARKER = "xgifDownloadNoMedia";
+  const DEBUG_LOGGED_MARKER = "xgifDownloadDebugLogged";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
+    '[data-testid="comment"]',
     '[data-testid="retweet"]',
     '[data-testid="repost"]',
     '[data-testid="unretweet"]',
@@ -37,13 +42,30 @@
   const ACTION_PANEL_ARIA_SELECTORS = [
     '[aria-label*="Reply"]',
     '[aria-label*="Repost"]',
-    '[aria-label*="Like"]'
+    '[aria-label*="Retweet"]',
+    '[aria-label*="Like"]',
+    '[aria-label*="Bookmark"]',
+    '[aria-label*="Share"]'
   ];
   const ACTION_PANEL_SELECTOR = [
     ...ACTION_PANEL_TEST_ID_SELECTORS,
     ...ACTION_PANEL_ARIA_SELECTORS
   ].join(", ");
   const SHARE_ACTION_SELECTOR = '[data-testid="share"]';
+  let loggedEmptyScan = false;
+
+  function logOnce(target, marker, logger, message, ...details) {
+    if (!target || !(target instanceof Element)) {
+      return;
+    }
+
+    if (target.dataset[marker]) {
+      return;
+    }
+
+    target.dataset[marker] = "true";
+    logger(`${LOG_PREFIX} ${message}`, ...details);
+  }
 
   function normalizeUrl(url) {
     if (typeof url !== "string") {
@@ -60,6 +82,8 @@
   function getPostScope(video) {
     return (
       video.closest('[data-testid="tweet"]') ||
+      video.closest('[data-testid="tweetDetail"]') ||
+      video.closest('[role="article"]') ||
       video.closest("article") ||
       video.closest('[data-testid="cellInnerDiv"]') ||
       video.parentElement
@@ -147,25 +171,35 @@
     return null;
   }
 
-  function getActionPanel(video) {
-    const scope = getPostScope(video);
-
+  function getActionPanel(video, scope = getPostScope(video)) {
     if (!scope) {
+      logOnce(video, NO_SCOPE_MARKER, console.debug, "Post scope not found for video.", video);
       return null;
     }
 
     const actionButton = findActionButton(scope);
 
     if (!actionButton) {
+      logOnce(video, NO_ACTION_BUTTON_MARKER, console.debug, "Action button not found for video.", scope);
       return null;
     }
 
-    return (
+    const actionPanel =
       actionButton.closest('[role="group"]') ||
       Array.from(scope.querySelectorAll('[role="group"]')).find(isActionPanel) ||
       findActionPanelFromButton(actionButton) ||
-      actionButton.parentElement
-    );
+      actionButton.parentElement;
+
+    if (!actionPanel) {
+      logOnce(video, NO_PANEL_MARKER, console.debug, "Action panel not found for video.", {
+        video,
+        scope,
+        actionButton
+      });
+      return null;
+    }
+
+    return actionPanel;
   }
 
   function buildFileName(videoUrl, extension) {
@@ -350,6 +384,42 @@
     }
   }
 
+  async function handleMp4Download(video, button) {
+    const mp4Url = getMp4Url(video);
+
+    if (!mp4Url) {
+      setButtonState(button, {
+        text: "MP4 unavailable",
+        disabled: false,
+        title: "Could not find a direct MP4 source for this video."
+      });
+      return;
+    }
+
+    setButtonState(button, {
+      text: "Downloading MP4…",
+      disabled: true,
+      title: "Downloading this video as an MP4 file."
+    });
+
+    try {
+      const buffer = await fetchArrayBuffer(mp4Url);
+      triggerDownload(new Blob([buffer], { type: "video/mp4" }), buildFileName(mp4Url, ".mp4"));
+      setButtonState(button, {
+        text: "Downloaded",
+        disabled: false,
+        title: "MP4 downloaded successfully."
+      });
+    } catch (error) {
+      console.error("X MP4 download failed:", error);
+      setButtonState(button, {
+        text: "Retry MP4",
+        disabled: false,
+        title: error instanceof Error ? error.message : "Failed to download the MP4."
+      });
+    }
+  }
+
   function createButton({ label, title, onClick, type }) {
     const button = document.createElement("button");
 
@@ -393,23 +463,34 @@
       return;
     }
 
-    const actionPanel = getActionPanel(video);
+    const scope = getPostScope(video);
+    const isGif = hasGifBadge(video);
+    const mp4Url = getMp4Url(video);
+    const m3u8Url = getM3u8Url(video);
+
+    logOnce(
+      video,
+      DEBUG_LOGGED_MARKER,
+      console.debug,
+      `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(m3u8Url)}).`,
+      video
+    );
+
+    const actionPanel = getActionPanel(video, scope);
 
     if (!actionPanel) {
-      if (!video.dataset[NO_PANEL_MARKER]) {
-        console.debug(`${LOG_PREFIX} Action panel not found for video.`, video);
-        video.dataset[NO_PANEL_MARKER] = "true";
-      }
       return;
     }
 
-    const isGif = hasGifBadge(video);
+    const existingDownloadButton = actionPanel.querySelector(
+      `[${DOWNLOAD_TYPE_ATTRIBUTE}="gif"], [${DOWNLOAD_TYPE_ATTRIBUTE}="hls"], [${DOWNLOAD_TYPE_ATTRIBUTE}="mp4"]`
+    );
 
     if (
       isGif &&
       hasGifSupport &&
       !video.dataset[GIF_PROCESSED_MARKER] &&
-      !actionPanel.querySelector(`[${DOWNLOAD_TYPE_ATTRIBUTE}="gif"]`)
+      !existingDownloadButton
     ) {
       const gifButton = createButton({
         label: "Download GIF",
@@ -427,27 +508,40 @@
 
     if (
       !isGif &&
-      hasHlsSupport &&
       !video.dataset[HLS_PROCESSED_MARKER] &&
-      !actionPanel.querySelector(`[${DOWNLOAD_TYPE_ATTRIBUTE}="hls"]`)
+      !existingDownloadButton
     ) {
-      const hlsUrl = getM3u8Url(video);
+      if (hasHlsSupport && m3u8Url) {
+        const hlsButton = createButton({
+          label: "Download MP4",
+          title: "Download this X video as an MP4 file.",
+          onClick: (button) => handleHlsDownload(video, button),
+          type: "hls"
+        });
+        const actionItem = createActionItem(hlsButton);
 
-      if (!hlsUrl) {
+        insertActionItem(actionPanel, actionItem);
+        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        console.info(`${LOG_PREFIX} Added MP4 download button.`, video);
         return;
       }
 
-      const hlsButton = createButton({
-        label: "Download MP4",
-        title: "Download this X video as an MP4 file.",
-        onClick: (button) => handleHlsDownload(video, button),
-        type: "hls"
-      });
-      const actionItem = createActionItem(hlsButton);
+      if (mp4Url) {
+        const mp4Button = createButton({
+          label: "Download MP4",
+          title: "Download this X video as an MP4 file.",
+          onClick: (button) => handleMp4Download(video, button),
+          type: "mp4"
+        });
+        const actionItem = createActionItem(mp4Button);
 
-      insertActionItem(actionPanel, actionItem);
-      video.dataset[HLS_PROCESSED_MARKER] = "true";
-      console.info(`${LOG_PREFIX} Added MP4 download button.`, video);
+        insertActionItem(actionPanel, actionItem);
+        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        console.info(`${LOG_PREFIX} Added direct MP4 download button.`, video);
+        return;
+      }
+
+      logOnce(video, NO_MEDIA_MARKER, console.debug, "No MP4 or HLS source found for video.", video);
     }
   }
 
@@ -476,6 +570,11 @@
         : rootNode.matches("video")
           ? [rootNode]
           : rootNode.querySelectorAll("video");
+
+    if (rootNode === document && videos.length === 0 && !loggedEmptyScan) {
+      loggedEmptyScan = true;
+      console.debug(`${LOG_PREFIX} No videos found during initial scan.`, document.location.href);
+    }
 
     videos.forEach(decorateVideo);
   }
