@@ -1,12 +1,20 @@
 (function initializeXGifDownloader(root) {
+  const LOG_PREFIX = "[X GIF Downloader]";
   const encoder = root.XGifEncoder;
   const hlsUtils = root.XHlsUtils;
   const hasGifSupport = Boolean(encoder && typeof encoder.convertVideoUrlToGifBlob === "function");
   const hasHlsSupport = Boolean(hlsUtils && typeof hlsUtils.parseMediaPlaylist === "function");
 
   if (!hasGifSupport && !hasHlsSupport) {
+    console.warn(`${LOG_PREFIX} No supported download handlers found.`);
     return;
   }
+
+  console.info(
+    `${LOG_PREFIX} Initialized (GIF=${hasGifSupport ? "on" : "off"}, HLS=${
+      hasHlsSupport ? "on" : "off"
+    }).`
+  );
 
   const BUTTON_CLASS = "xgif-download-button";
   const ACTION_ITEM_CLASS = "xgif-download-action";
@@ -16,6 +24,7 @@
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="retweet"]',
+    '[data-testid="repost"]',
     '[data-testid="like"]',
     '[data-testid="bookmark"]',
     '[data-testid="share"]'
@@ -58,6 +67,16 @@
       return false;
     }
 
+    if (scope.querySelector('[data-testid="gif"]')) {
+      return true;
+    }
+
+    const label = video.getAttribute("aria-label") || "";
+
+    if (label.toUpperCase().includes("GIF")) {
+      return true;
+    }
+
     return Array.from(scope.querySelectorAll("span")).some((span) => span.textContent?.trim() === "GIF");
   }
 
@@ -97,7 +116,17 @@
       return null;
     }
 
-    return Array.from(scope.querySelectorAll('[role="group"]')).find(isActionPanel) || null;
+    const actionButton = scope.querySelector(ACTION_PANEL_SELECTOR);
+
+    if (!actionButton) {
+      return null;
+    }
+
+    return (
+      actionButton.closest('[role="group"]') ||
+      Array.from(scope.querySelectorAll('[role="group"]')).find(isActionPanel) ||
+      actionButton.parentElement
+    );
   }
 
   function buildFileName(videoUrl, extension) {
@@ -378,6 +407,20 @@
   }
 
   function scan(rootNode = document) {
+    if (rootNode instanceof HTMLVideoElement) {
+      decorateVideo(rootNode);
+      return;
+    }
+
+    if (rootNode instanceof HTMLSourceElement) {
+      const parentVideo = rootNode.closest("video");
+
+      if (parentVideo) {
+        decorateVideo(parentVideo);
+      }
+      return;
+    }
+
     if (!(rootNode instanceof Element) && rootNode !== document) {
       return;
     }
@@ -394,6 +437,11 @@
 
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
+      if (mutation.type === "attributes") {
+        scan(mutation.target);
+        return;
+      }
+
       mutation.addedNodes.forEach((node) => {
         scan(node);
       });
@@ -401,5 +449,10 @@
   });
 
   scan();
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["src"]
+  });
 })(globalThis);
