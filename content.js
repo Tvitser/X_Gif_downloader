@@ -1,8 +1,10 @@
 (function initializeXGifDownloader(root) {
   const encoder = root.XGifEncoder;
   const hlsUtils = root.XHlsUtils;
+  const hasGifSupport = Boolean(encoder && typeof encoder.convertVideoUrlToGifBlob === "function");
+  const hasHlsSupport = Boolean(hlsUtils && typeof hlsUtils.parseMediaPlaylist === "function");
 
-  if (!encoder || typeof encoder.convertVideoUrlToGifBlob !== "function") {
+  if (!hasGifSupport && !hasHlsSupport) {
     return;
   }
 
@@ -134,7 +136,7 @@
     const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error(`Unable to download the playlist (${response.status}).`);
+      throw new Error(`Unable to download playlist ${url} (${response.status}).`);
     }
 
     return response.text();
@@ -144,7 +146,7 @@
     const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error(`Unable to download a media segment (${response.status}).`);
+      throw new Error(`Unable to download media segment ${url} (${response.status}).`);
     }
 
     return response.arrayBuffer();
@@ -171,7 +173,7 @@
   }
 
   async function downloadHlsToMp4(m3u8Url, onProgress) {
-    if (!hlsUtils) {
+    if (!hasHlsSupport) {
       throw new Error("HLS parsing utilities are unavailable.");
     }
 
@@ -331,7 +333,12 @@
 
     const isGif = hasGifBadge(video);
 
-    if (isGif && !video.dataset[GIF_PROCESSED_MARKER]) {
+    if (
+      isGif &&
+      hasGifSupport &&
+      !video.dataset[GIF_PROCESSED_MARKER] &&
+      !actionPanel.querySelector(`[${DOWNLOAD_TYPE_ATTRIBUTE}="gif"]`)
+    ) {
       const gifButton = createButton({
         label: "Download GIF",
         title: "Download this X GIF as an animated GIF file.",
@@ -347,7 +354,7 @@
 
     if (
       !isGif &&
-      hlsUtils &&
+      hasHlsSupport &&
       !video.dataset[HLS_PROCESSED_MARKER] &&
       !actionPanel.querySelector(`[${DOWNLOAD_TYPE_ATTRIBUTE}="hls"]`)
     ) {
