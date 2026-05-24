@@ -16,4 +16,4 @@ Chrome extension that adds **Download GIF** and **Download MP4** buttons to X/Tw
 - adds a **Download MP4** button to HLS-backed video posts
 - downloads the backing MP4 or HLS segments
 - converts GIF videos into an animated GIF in the browser
-- saves the generated `.gif` or `.mp4` file to your machine
+- saves the generated `.gif` or assembled `.mp4` file to your machine

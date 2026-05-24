@@ -100,7 +100,7 @@
       return null;
     }
 
-    // Tweet IDs are long, but allow 5+ digits to avoid matching unrelated short numbers.
+    // Tweet IDs are typically 18-19 digits, but allow 5+ to stay permissive for legacy/variant URLs.
     const match =
       url.match(/\/(?:amplify_video|ext_tw_video|tweet_video|video)\/(\d{5,})/i) ||
       url.match(/\/status\/(\d{5,})/i);
@@ -1112,6 +1112,11 @@
     const networkM3u8Url = tweetId ? selectNetworkM3u8Url(tweetId) : null;
     const networkSegments = tweetId ? selectNetworkSegments(tweetId) : null;
     const resolvedM3u8Url = m3u8Url || networkM3u8Url;
+    const hasDownloadableSource = Boolean(mp4Url || resolvedM3u8Url || networkSegments);
+
+    if (hasDownloadableSource && video.dataset[BLOB_PENDING_MARKER]) {
+      delete video.dataset[BLOB_PENDING_MARKER];
+    }
 
     logOnce(
       video,
@@ -1246,7 +1251,9 @@
 
       // Blob URLs are browser-only references, so mark as pending and rely on network capture rescans.
       if (blobUrls.length > 0) {
-        video.dataset[BLOB_PENDING_MARKER] = "true";
+        if (!video.dataset[BLOB_PENDING_MARKER]) {
+          video.dataset[BLOB_PENDING_MARKER] = "true";
+        }
         logOnce(
           video,
           BLOB_ONLY_LOGGED_MARKER,
