@@ -16,3 +16,5 @@ Chrome extension that adds a **Download GIF** button to GIF posts on X/Twitter, 
 - downloads the backing MP4 asset
 - converts the video frames into a GIF in the browser
 - saves the generated `.gif` file to your machine
+МАЙНДЫ:
+ДОСТАВАТЬ ИЗ NETWORK ссылки на видео (ТАМЖЕ и айди поста парсить) и пытаться скачать и собрать в лучшем возможном качестве
