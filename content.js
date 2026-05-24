@@ -244,7 +244,7 @@
         .getEntriesByType("resource")
         .forEach((entry) => recordNetworkMedia(entry.name));
     } catch (error) {
-      // ignore
+      console.debug(`${LOG_PREFIX} Unable to read performance entries.`, error);
     }
 
     const script = document.createElement("script");
@@ -1056,7 +1056,7 @@
       const video = post.querySelector("video");
 
       if (video) {
-        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found "video tag".', video);
+        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'GIF/video found via "video" tag.', video);
         decorateVideo(video);
         return;
       }
@@ -1065,12 +1065,12 @@
       const sourceVideo = source?.closest("video");
 
       if (sourceVideo) {
-        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found via "source" tag.', sourceVideo);
+        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'GIF/video found via "source" tag.', sourceVideo);
         decorateVideo(sourceVideo);
         return;
       }
 
-      logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "post doesnt contain gif/video.", post);
+      logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "Post doesn't contain GIF/video.", post);
     });
   }
 

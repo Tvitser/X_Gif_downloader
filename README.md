@@ -11,7 +11,7 @@ Chrome extension that adds **Download GIF** and **Download MP4** buttons to X/Tw
 
 ## How it works
 
-- watches X/Twitter pages for GIF posts
+- watches X/Twitter pages for GIF and video posts
 - adds an overlay **Download GIF** button to each detected GIF video
 - adds a **Download MP4** button to HLS-backed video posts
 - downloads the backing MP4 or HLS segments
