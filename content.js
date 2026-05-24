@@ -244,7 +244,10 @@
         .getEntriesByType("resource")
         .forEach((entry) => recordNetworkMedia(entry.name));
     } catch (error) {
-      console.debug(`${LOG_PREFIX} Unable to read performance entries.`, error);
+      console.debug(
+        `${LOG_PREFIX} Unable to read performance entries for network detection; HLS detection may be limited.`,
+        error
+      );
     }
 
     const script = document.createElement("script");
