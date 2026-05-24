@@ -30,6 +30,7 @@
   const POST_NO_MEDIA_MARKER = "xgifDownloadPostNoMedia";
   const POST_HAS_MEDIA_MARKER = "xgifDownloadPostHasMedia";
   const MEDIA_CANDIDATES_MARKER = "xgifDownloadMediaCandidatesLogged";
+  const BLOB_PENDING_MARKER = "xgifDownloadBlobPending";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="comment"]',
@@ -83,11 +84,44 @@
       return null;
     }
 
+    const sanitized = url.replace(/&amp;/g, "&");
+
     try {
-      return new URL(url, window.location.href).toString();
+      return new URL(sanitized, window.location.href).toString();
     } catch (error) {
       return null;
     }
+  }
+
+  function extractTweetIdFromUrl(url) {
+    if (typeof url !== "string") {
+      return null;
+    }
+
+    const match =
+      url.match(/\/(?:amplify_video|ext_tw_video|tweet_video|video)\/(\d{5,})/i) ||
+      url.match(/\/status\/(\d{5,})/i);
+
+    return match?.[1] ?? null;
+  }
+
+  function getTweetId(scope) {
+    if (!scope) {
+      return null;
+    }
+
+    const anchors = scope.querySelectorAll?.('a[href*="/status/"]') ?? [];
+
+    for (const anchor of anchors) {
+      const href = anchor.getAttribute("href") || anchor.href || "";
+      const tweetId = extractTweetIdFromUrl(href);
+
+      if (tweetId) {
+        return tweetId;
+      }
+    }
+
+    return null;
   }
 
   function getPostScope(video) {
@@ -99,6 +133,161 @@
       video.closest('[data-testid="cellInnerDiv"]') ||
       video.parentElement
     );
+  }
+
+  const networkMediaByTweetId = new Map();
+  let rescanScheduled = false;
+
+  function scheduleRescan() {
+    if (rescanScheduled) {
+      return;
+    }
+
+    rescanScheduled = true;
+    const callback = () => {
+      rescanScheduled = false;
+      installNetworkSniffer();
+      scan();
+    };
+
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(callback, { timeout: 1000 });
+    } else {
+      setTimeout(callback, 500);
+    }
+  }
+
+  function scoreM3u8Url(url) {
+    if (typeof url !== "string") {
+      return 0;
+    }
+
+    let score = 0;
+
+    if (url.includes("/pl/")) {
+      score += 3;
+    }
+
+    if (url.includes("master.m3u8")) {
+      score += 2;
+    }
+
+    if (url.includes("variant_version")) {
+      score += 1;
+    }
+
+    return score;
+  }
+
+  function selectNetworkM3u8Url(tweetId) {
+    const entry = networkMediaByTweetId.get(tweetId);
+
+    if (!entry || entry.m3u8Urls.size === 0) {
+      return null;
+    }
+
+    return Array.from(entry.m3u8Urls).sort((a, b) => scoreM3u8Url(b) - scoreM3u8Url(a))[0];
+  }
+
+  function recordNetworkMedia(url) {
+    const normalized = normalizeUrl(url);
+
+    if (!normalized) {
+      return;
+    }
+
+    const lower = normalized.toLowerCase();
+
+    if (!lower.includes(".m3u8") && !lower.includes(".m4s")) {
+      return;
+    }
+
+    const tweetId = extractTweetIdFromUrl(normalized);
+
+    if (!tweetId) {
+      return;
+    }
+
+    let entry = networkMediaByTweetId.get(tweetId);
+
+    if (!entry) {
+      entry = { m3u8Urls: new Set(), m4sUrls: new Set() };
+      networkMediaByTweetId.set(tweetId, entry);
+    }
+
+    const targetSet = lower.includes(".m3u8") ? entry.m3u8Urls : entry.m4sUrls;
+    const beforeSize = targetSet.size;
+    targetSet.add(normalized);
+
+    if (targetSet.size !== beforeSize) {
+      scheduleRescan();
+    }
+  }
+
+  function installNetworkSniffer() {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) {
+        return;
+      }
+
+      const payload = event.data;
+
+      if (!payload || payload.source !== "xgif-network") {
+        return;
+      }
+
+      recordNetworkMedia(payload.url);
+    });
+
+    try {
+      performance
+        .getEntriesByType("resource")
+        .forEach((entry) => recordNetworkMedia(entry.name));
+    } catch (error) {
+      // ignore
+    }
+
+    const script = document.createElement("script");
+    script.textContent = `(() => {
+      if (window.__xgifNetworkSnifferInstalled) return;
+      window.__xgifNetworkSnifferInstalled = true;
+      const send = (url) => {
+        try {
+          window.postMessage({ source: "xgif-network", url }, "*");
+        } catch (e) {}
+      };
+      const record = (input) => {
+        if (!input) return;
+        try {
+          const url = typeof input === "string" ? input : input.url;
+          if (url) send(url);
+        } catch (e) {}
+      };
+      const originalFetch = window.fetch;
+      if (typeof originalFetch === "function") {
+        window.fetch = function(...args) {
+          record(args[0]);
+          return originalFetch.apply(this, args);
+        };
+      }
+      const originalOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        record(url);
+        return originalOpen.call(this, method, url, ...rest);
+      };
+      if (window.PerformanceObserver) {
+        try {
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              send(entry.name);
+            }
+          });
+          observer.observe({ type: "resource", buffered: true });
+        } catch (e) {}
+      }
+    })();`;
+    document.documentElement.appendChild(script);
+    script.remove();
   }
 
   function hasGifBadge(video) {
@@ -315,24 +504,154 @@
     return response.arrayBuffer();
   }
 
-  async function resolveMediaPlaylist(m3u8Url) {
+  function splitCodecs(codecsValue) {
+    if (typeof codecsValue !== "string") {
+      return { videoCodec: null, audioCodec: null };
+    }
+
+    const codecs = codecsValue
+      .split(",")
+      .map((codec) => codec.trim())
+      .filter(Boolean);
+
+    const videoCodec = codecs.find((codec) =>
+      ["avc1", "hvc1", "hev1"].some((prefix) => codec.startsWith(prefix))
+    );
+    const audioCodec = codecs.find((codec) => codec.startsWith("mp4a"));
+
+    return { videoCodec, audioCodec };
+  }
+
+  async function resolveHlsPlaylists(m3u8Url) {
     const playlistText = await fetchText(m3u8Url);
 
     if (!hlsUtils || !hlsUtils.isMasterPlaylist(playlistText)) {
-      return { playlistUrl: m3u8Url, playlistText };
+      return { videoPlaylistUrl: m3u8Url, videoPlaylistText: playlistText };
     }
 
     const variants = hlsUtils.parseMasterPlaylist(playlistText, m3u8Url);
-    const selected = hlsUtils.selectVariant(variants);
+    const selectedVariant = hlsUtils.selectVariant(variants);
 
-    if (!selected) {
+    if (!selectedVariant) {
       throw new Error("Unable to find a playable HLS variant.");
     }
 
+    const audioRenditions = hlsUtils.parseAudioRenditions
+      ? hlsUtils.parseAudioRenditions(playlistText, m3u8Url)
+      : [];
+    const selectedAudio = hlsUtils.selectAudioRendition
+      ? hlsUtils.selectAudioRendition(audioRenditions, selectedVariant.audioGroupId)
+      : null;
+
     return {
-      playlistUrl: selected.uri,
-      playlistText: await fetchText(selected.uri)
+      videoPlaylistUrl: selectedVariant.uri,
+      videoPlaylistText: await fetchText(selectedVariant.uri),
+      audioPlaylistUrl: selectedAudio?.uri ?? null,
+      audioPlaylistText: selectedAudio ? await fetchText(selectedAudio.uri) : null,
+      codecs: selectedVariant.codecs || null
     };
+  }
+
+  function waitForEvent(target, eventName) {
+    return new Promise((resolve, reject) => {
+      const handleEvent = () => {
+        cleanup();
+        resolve();
+      };
+      const handleError = (error) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(`Failed while waiting for ${eventName}.`));
+      };
+      const cleanup = () => {
+        target.removeEventListener(eventName, handleEvent);
+        target.removeEventListener("error", handleError);
+      };
+
+      target.addEventListener(eventName, handleEvent, { once: true });
+      target.addEventListener("error", handleError, { once: true });
+    });
+  }
+
+  function appendSourceBuffer(sourceBuffer, buffer) {
+    return new Promise((resolve, reject) => {
+      const handleUpdate = () => {
+        cleanup();
+        resolve();
+      };
+      const handleError = () => {
+        cleanup();
+        reject(new Error("Failed while appending media segments."));
+      };
+      const cleanup = () => {
+        sourceBuffer.removeEventListener("updateend", handleUpdate);
+        sourceBuffer.removeEventListener("error", handleError);
+      };
+
+      sourceBuffer.addEventListener("updateend", handleUpdate, { once: true });
+      sourceBuffer.addEventListener("error", handleError, { once: true });
+      sourceBuffer.appendBuffer(buffer);
+    });
+  }
+
+  async function muxAudioVideoToMp4({
+    videoParts,
+    audioParts,
+    videoMime,
+    audioMime,
+    recorderMime
+  }) {
+    const mediaSource = new MediaSource();
+    const mediaUrl = URL.createObjectURL(mediaSource);
+    const videoElement = document.createElement("video");
+
+    videoElement.preload = "auto";
+    videoElement.muted = true;
+    videoElement.playsInline = true;
+    videoElement.src = mediaUrl;
+
+    await waitForEvent(mediaSource, "sourceopen");
+
+    const videoBuffer = mediaSource.addSourceBuffer(videoMime);
+    const audioBuffer = mediaSource.addSourceBuffer(audioMime);
+
+    for (const buffer of videoParts) {
+      await appendSourceBuffer(videoBuffer, buffer);
+    }
+
+    for (const buffer of audioParts) {
+      await appendSourceBuffer(audioBuffer, buffer);
+    }
+
+    if (mediaSource.readyState === "open") {
+      mediaSource.endOfStream();
+    }
+
+    await waitForEvent(videoElement, "loadedmetadata");
+    const stream = videoElement.captureStream();
+    const recorder = new MediaRecorder(stream, { mimeType: recorderMime });
+    const chunks = [];
+
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data && event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    });
+
+    const stopPromise = waitForEvent(recorder, "stop");
+    recorder.start();
+
+    try {
+      await videoElement.play();
+      await waitForEvent(videoElement, "ended");
+    } finally {
+      recorder.stop();
+      await stopPromise;
+      URL.revokeObjectURL(mediaUrl);
+      videoElement.removeAttribute("src");
+      videoElement.load();
+    }
+
+    return new Blob(chunks, { type: recorderMime });
   }
 
   async function downloadHlsToMp4(m3u8Url, onProgress) {
@@ -340,27 +659,83 @@
       throw new Error("HLS parsing utilities are unavailable.");
     }
 
-    const { playlistUrl, playlistText } = await resolveMediaPlaylist(m3u8Url);
-    const { initSegmentUrl, segmentUrls } = hlsUtils.parseMediaPlaylist(playlistText, playlistUrl);
+    const {
+      videoPlaylistUrl,
+      videoPlaylistText,
+      audioPlaylistUrl,
+      audioPlaylistText,
+      codecs
+    } = await resolveHlsPlaylists(m3u8Url);
+    const { initSegmentUrl, segmentUrls } = hlsUtils.parseMediaPlaylist(
+      videoPlaylistText,
+      videoPlaylistUrl
+    );
+    const audioPlaylist =
+      audioPlaylistUrl && audioPlaylistText
+        ? hlsUtils.parseMediaPlaylist(audioPlaylistText, audioPlaylistUrl)
+        : null;
 
     if (!segmentUrls.length) {
       throw new Error("No media segments found in the HLS playlist.");
     }
 
-    const totalSegments = segmentUrls.length + (initSegmentUrl ? 1 : 0);
+    const audioSegmentsCount = audioPlaylist
+      ? audioPlaylist.segmentUrls.length + (audioPlaylist.initSegmentUrl ? 1 : 0)
+      : 0;
+    const totalSegments = segmentUrls.length + (initSegmentUrl ? 1 : 0) + audioSegmentsCount;
     let loadedSegments = 0;
     const parts = [];
+    const audioParts = [];
+
+    const reportProgress = () => {
+      loadedSegments += 1;
+      onProgress?.({ loaded: loadedSegments, total: totalSegments });
+    };
 
     if (initSegmentUrl) {
       parts.push(await fetchArrayBuffer(initSegmentUrl));
-      loadedSegments += 1;
-      onProgress?.({ loaded: loadedSegments, total: totalSegments });
+      reportProgress();
     }
 
     for (const segmentUrl of segmentUrls) {
       parts.push(await fetchArrayBuffer(segmentUrl));
-      loadedSegments += 1;
-      onProgress?.({ loaded: loadedSegments, total: totalSegments });
+      reportProgress();
+    }
+
+    if (audioPlaylist) {
+      if (audioPlaylist.initSegmentUrl) {
+        audioParts.push(await fetchArrayBuffer(audioPlaylist.initSegmentUrl));
+        reportProgress();
+      }
+
+      for (const segmentUrl of audioPlaylist.segmentUrls) {
+        audioParts.push(await fetchArrayBuffer(segmentUrl));
+        reportProgress();
+      }
+
+      const { videoCodec, audioCodec } = splitCodecs(codecs);
+      const resolvedVideoCodec = videoCodec || "avc1.42E01E";
+      const resolvedAudioCodec = audioCodec || "mp4a.40.2";
+      const videoMime = `video/mp4; codecs="${resolvedVideoCodec}"`;
+      const audioMime = `audio/mp4; codecs="${resolvedAudioCodec}"`;
+      const recorderMime = `video/mp4; codecs="${resolvedVideoCodec}, ${resolvedAudioCodec}"`;
+
+      if (
+        typeof MediaSource !== "undefined" &&
+        typeof MediaRecorder !== "undefined" &&
+        MediaSource.isTypeSupported(videoMime) &&
+        MediaSource.isTypeSupported(audioMime) &&
+        MediaRecorder.isTypeSupported(recorderMime)
+      ) {
+        onProgress?.({ loaded: totalSegments, total: totalSegments, phase: "muxing" });
+        return muxAudioVideoToMp4({
+          videoParts: parts,
+          audioParts,
+          videoMime,
+          audioMime,
+          recorderMime
+        });
+      }
     }
 
     return new Blob(parts, { type: "video/mp4" });
@@ -402,8 +777,8 @@
     }
   }
 
-  async function handleHlsDownload(video, button) {
-    const playlistUrl = getM3u8Url(video, getPostScope(video));
+  async function handleHlsDownload(video, button, playlistOverride) {
+    const playlistUrl = playlistOverride || getM3u8Url(video, getPostScope(video));
 
     if (!playlistUrl) {
       setButtonState(button, {
@@ -421,11 +796,14 @@
     });
 
     try {
-      const mp4Blob = await downloadHlsToMp4(playlistUrl, ({ loaded, total }) => {
+      const mp4Blob = await downloadHlsToMp4(playlistUrl, ({ loaded, total, phase }) => {
         setButtonState(button, {
-          text: `Downloading ${loaded}/${total}…`,
+          text: phase === "muxing" ? "Muxing audio…" : `Downloading ${loaded}/${total}…`,
           disabled: true,
-          title: "Downloading HLS segments and assembling MP4."
+          title:
+            phase === "muxing"
+              ? "Combining audio and video into an MP4."
+              : "Downloading HLS segments and assembling MP4."
         });
       });
 
@@ -529,13 +907,18 @@
     const { httpUrls, blobUrls } = collectMediaUrls(video, scope);
     const mp4Url = findMp4Url(httpUrls);
     const m3u8Url = findM3u8Url(httpUrls);
+    const tweetId = getTweetId(scope);
+    const networkM3u8Url = tweetId ? selectNetworkM3u8Url(tweetId) : null;
+    const resolvedM3u8Url = m3u8Url || networkM3u8Url;
 
     logOnce(
       video,
       DEBUG_LOGGED_MARKER,
       console.debug,
-      `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(m3u8Url)}, blob=${Boolean(blobUrls.length)}).`,
-      video
+      `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(
+        m3u8Url
+      )}, networkM3u8=${Boolean(networkM3u8Url)}, blob=${Boolean(blobUrls.length)}).`,
+      { video, tweetId }
     );
 
     logOnce(
@@ -595,7 +978,7 @@
         const hlsButton = createButton({
           label: "Download MP4",
           title: "Download this X video as an MP4 file.",
-          onClick: (button) => handleHlsDownload(video, button),
+          onClick: (button) => handleHlsDownload(video, button, m3u8Url),
           type: "hls"
         });
         const actionItem = createActionItem(hlsButton);
@@ -603,6 +986,24 @@
         insertActionItem(actionPanel, actionItem);
         video.dataset[HLS_PROCESSED_MARKER] = "true";
         console.info(`${LOG_PREFIX} Added MP4 download button.`, video);
+        return;
+      }
+
+      if (hasHlsSupport && resolvedM3u8Url) {
+        const hlsButton = createButton({
+          label: "Download MP4",
+          title: "Download this X video as an MP4 file (playlist found from network activity).",
+          onClick: (button) => handleHlsDownload(video, button, resolvedM3u8Url),
+          type: "hls"
+        });
+        const actionItem = createActionItem(hlsButton);
+
+        insertActionItem(actionPanel, actionItem);
+        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        console.info(`${LOG_PREFIX} Added MP4 download button from network playlist.`, {
+          video,
+          resolvedM3u8Url
+        });
         return;
       }
 
@@ -623,12 +1024,12 @@
 
       // If blob URLs exist but no downloadable sources, mark as processed but log the blob detection
       if (blobUrls.length > 0) {
-        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        video.dataset[BLOB_PENDING_MARKER] = "true";
         logOnce(
           video,
           "xgifDownloadBlobOnlyDetected",
           console.info,
-          `Media detected with blob URLs only (not downloadable). Post has ${blobUrls.length} blob URL(s).`,
+          `Media detected with blob URLs only (waiting for network playlist). Post has ${blobUrls.length} blob URL(s).`,
           video
         );
       } else {

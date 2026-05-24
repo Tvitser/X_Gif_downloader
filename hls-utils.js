@@ -75,11 +75,81 @@
       variants.push({
         uri: resolveUrl(uri, baseUrl),
         bandwidth: Number(attributes.BANDWIDTH) || 0,
-        resolution: attributes.RESOLUTION || null
+        resolution: attributes.RESOLUTION || null,
+        codecs: attributes.CODECS || null,
+        audioGroupId: attributes.AUDIO || null
       });
     }
 
     return variants;
+  }
+
+  function inferBitrate(value) {
+    if (typeof value !== "string") {
+      return 0;
+    }
+
+    const matches = value.match(/(\d{4,6})/g);
+
+    if (!matches || matches.length === 0) {
+      return 0;
+    }
+
+    return Math.max(...matches.map((match) => Number(match) || 0));
+  }
+
+  function parseAudioRenditions(text, baseUrl) {
+    const lines = normalizeLines(text);
+    const renditions = [];
+
+    for (const line of lines) {
+      if (!line.startsWith("#EXT-X-MEDIA")) {
+        continue;
+      }
+
+      const attributeList = line.split(":", 2)[1] ?? "";
+      const attributes = parseAttributeList(attributeList);
+
+      if ((attributes.TYPE || "").toUpperCase() !== "AUDIO") {
+        continue;
+      }
+
+      if (!attributes.URI) {
+        continue;
+      }
+
+      const bandwidth =
+        Number(attributes["AVERAGE-BANDWIDTH"]) ||
+        Number(attributes.BANDWIDTH) ||
+        inferBitrate(attributes.URI) ||
+        inferBitrate(attributes.NAME);
+
+      renditions.push({
+        uri: resolveUrl(attributes.URI, baseUrl),
+        groupId: attributes["GROUP-ID"] || null,
+        name: attributes.NAME || null,
+        bandwidth
+      });
+    }
+
+    return renditions;
+  }
+
+  function selectAudioRendition(renditions, groupId) {
+    if (!Array.isArray(renditions) || renditions.length === 0) {
+      return null;
+    }
+
+    const candidates = groupId ? renditions.filter((rendition) => rendition.groupId === groupId) : renditions;
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return candidates.reduce(
+      (best, candidate) => (candidate.bandwidth > (best?.bandwidth ?? 0) ? candidate : best),
+      null
+    );
   }
 
   function selectVariant(variants) {
@@ -123,8 +193,10 @@
     isMasterPlaylist,
     parseAttributeList,
     parseMasterPlaylist,
+    parseAudioRenditions,
     parseMediaPlaylist,
     resolveUrl,
+    selectAudioRendition,
     selectVariant
   };
 });
