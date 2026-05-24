@@ -1241,7 +1241,7 @@
         return;
       }
 
-      // If blob URLs exist but no downloadable sources, mark as processed but log the blob detection
+      // Blob URLs are browser-only references, so wait for network-captured sources when no direct URL exists.
       if (blobUrls.length > 0) {
         video.dataset[BLOB_PENDING_MARKER] = "true";
         logOnce(
