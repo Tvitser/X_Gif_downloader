@@ -1061,6 +1061,15 @@
         return;
       }
 
+      const source = post.querySelector("source");
+      const sourceVideo = source?.closest("video");
+
+      if (sourceVideo) {
+        logOnce(post, POST_HAS_MEDIA_MARKER, console.debug, 'gif/video found via "source" tag.', sourceVideo);
+        decorateVideo(sourceVideo);
+        return;
+      }
+
       logOnce(post, POST_NO_MEDIA_MARKER, console.debug, "post doesnt contain gif/video.", post);
     });
   }
