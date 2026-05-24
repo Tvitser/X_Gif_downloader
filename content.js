@@ -100,7 +100,7 @@
       return null;
     }
 
-    // Tweet IDs are typically 18-19 digits, but allow 5+ to stay permissive for legacy/variant URLs.
+    // Tweet IDs are typically 18-19 digits, but allow 5+ to cover media URLs that embed shorter IDs.
     const match =
       url.match(/\/(?:amplify_video|ext_tw_video|tweet_video|video)\/(\d{5,})/i) ||
       url.match(/\/status\/(\d{5,})/i);
@@ -1249,7 +1249,7 @@
         return;
       }
 
-      // Blob URLs are browser-only references, so mark as pending and rely on network capture rescans.
+      // Blob URLs are browser-only memory references, so mark as pending and rely on network capture rescans.
       if (blobUrls.length > 0) {
         if (!video.dataset[BLOB_PENDING_MARKER]) {
           video.dataset[BLOB_PENDING_MARKER] = "true";
