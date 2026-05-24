@@ -189,6 +189,119 @@
     return Array.from(entry.m3u8Urls).sort((a, b) => scoreM3u8Url(b) - scoreM3u8Url(a))[0];
   }
 
+  function extractSegmentIndex(url) {
+    if (typeof url !== "string") {
+      return null;
+    }
+
+    const match = url.match(/(\d+)(?=[^/]*\.m4s(\?|$))/i);
+    return match ? Number(match[1]) : null;
+  }
+
+  function normalizeSegmentBase(url) {
+    if (typeof url !== "string") {
+      return "";
+    }
+
+    const [path] = url.split("?");
+    const lastSlash = path.lastIndexOf("/");
+    return lastSlash === -1 ? path : path.slice(0, lastSlash + 1);
+  }
+
+  function sortSegmentUrls(urls) {
+    const decorated = urls.map((url, index) => ({
+      url,
+      index,
+      segmentIndex: extractSegmentIndex(url)
+    }));
+    const hasIndex = decorated.some((entry) => typeof entry.segmentIndex === "number");
+
+    if (!hasIndex) {
+      return urls;
+    }
+
+    decorated.sort((a, b) => {
+      if (typeof a.segmentIndex !== "number" && typeof b.segmentIndex !== "number") {
+        return a.index - b.index;
+      }
+
+      if (typeof a.segmentIndex !== "number") {
+        return 1;
+      }
+
+      if (typeof b.segmentIndex !== "number") {
+        return -1;
+      }
+
+      if (a.segmentIndex !== b.segmentIndex) {
+        return a.segmentIndex - b.segmentIndex;
+      }
+
+      return a.index - b.index;
+    });
+
+    return decorated.map((entry) => entry.url);
+  }
+
+  function selectSegmentGroup(urls) {
+    if (!urls.length) {
+      return urls;
+    }
+
+    const groups = new Map();
+
+    for (const url of urls) {
+      const base = normalizeSegmentBase(url);
+      const group = groups.get(base) ?? [];
+      group.push(url);
+      groups.set(base, group);
+    }
+
+    let bestGroup = urls;
+
+    for (const group of groups.values()) {
+      if (group.length > bestGroup.length) {
+        bestGroup = group;
+      }
+    }
+
+    return bestGroup;
+  }
+
+  function splitM4sUrls(urls) {
+    const initRegex = /(^|\/)init[^/]*\.(mp4|m4s)(\?|$)/i;
+    const scopedUrls = selectSegmentGroup(urls);
+    let initSegmentUrl = null;
+    const segmentUrls = [];
+
+    for (const url of scopedUrls) {
+      if (!initSegmentUrl && initRegex.test(url)) {
+        initSegmentUrl = url;
+        continue;
+      }
+
+      segmentUrls.push(url);
+    }
+
+    return { initSegmentUrl, segmentUrls: sortSegmentUrls(segmentUrls) };
+  }
+
+  function selectNetworkSegments(tweetId) {
+    const entry = networkMediaByTweetId.get(tweetId);
+
+    if (!entry || entry.m4sUrls.size === 0) {
+      return null;
+    }
+
+    const { initSegmentUrl, segmentUrls } = splitM4sUrls(Array.from(entry.m4sUrls));
+
+    if (!segmentUrls.length) {
+      return null;
+    }
+
+    return { initSegmentUrl, segmentUrls };
+  }
+
   function recordNetworkMedia(url) {
     const normalized = normalizeUrl(url);
 
@@ -657,6 +770,33 @@
     return new Blob(chunks, { type: recorderMime });
   }
 
+  async function downloadSegmentsToMp4({ initSegmentUrl, segmentUrls }, onProgress) {
+    if (!segmentUrls || segmentUrls.length === 0) {
+      throw new Error("No media segments found in the network capture.");
+    }
+
+    const totalSegments = segmentUrls.length + (initSegmentUrl ? 1 : 0);
+    let loadedSegments = 0;
+    const parts = [];
+
+    const reportProgress = () => {
+      loadedSegments += 1;
+      onProgress?.({ loaded: loadedSegments, total: totalSegments });
+    };
+
+    if (initSegmentUrl) {
+      parts.push(await fetchArrayBuffer(initSegmentUrl));
+      reportProgress();
+    }
+
+    for (const segmentUrl of segmentUrls) {
+      parts.push(await fetchArrayBuffer(segmentUrl));
+      reportProgress();
+    }
+
+    return new Blob(parts, { type: "video/mp4" });
+  }
+
   async function downloadHlsToMp4(m3u8Url, onProgress) {
     if (!hasHlsSupport) {
       throw new Error("HLS parsing utilities are unavailable.");
@@ -826,6 +966,52 @@
     }
   }
 
+  async function handleSegmentDownload(video, button, segmentsOverride) {
+    const scope = getPostScope(video);
+    const tweetId = getTweetId(scope);
+    const segments = segmentsOverride || (tweetId ? selectNetworkSegments(tweetId) : null);
+
+    if (!segments) {
+      setButtonState(button, {
+        text: "Stream unavailable",
+        disabled: false,
+        title: "Could not find network segments for this video."
+      });
+      return;
+    }
+
+    setButtonState(button, {
+      text: "Fetching stream…",
+      disabled: true,
+      title: "Downloading video segments captured from network activity."
+    });
+
+    try {
+      const mp4Blob = await downloadSegmentsToMp4(segments, ({ loaded, total }) => {
+        setButtonState(button, {
+          text: `Downloading ${loaded}/${total}…`,
+          disabled: true,
+          title: "Downloading video segments and assembling MP4."
+        });
+      });
+
+      const fileNameSource = segments.segmentUrls[0] || segments.initSegmentUrl || "x-download";
+      triggerDownload(mp4Blob, buildFileName(fileNameSource, ".mp4"));
+      setButtonState(button, {
+        text: "Downloaded",
+        disabled: false,
+        title: "MP4 downloaded successfully."
+      });
+    } catch (error) {
+      console.error("X segment download failed:", error);
+      setButtonState(button, {
+        text: "Retry MP4",
+        disabled: false,
+        title: error instanceof Error ? error.message : "Failed to download the video."
+      });
+    }
+  }
+
   async function handleMp4Download(video, button) {
     const mp4Url = getMp4Url(video, getPostScope(video));
 
@@ -912,6 +1098,7 @@
     const m3u8Url = findM3u8Url(httpUrls);
     const tweetId = getTweetId(scope);
     const networkM3u8Url = tweetId ? selectNetworkM3u8Url(tweetId) : null;
+    const networkSegments = tweetId ? selectNetworkSegments(tweetId) : null;
     const resolvedM3u8Url = m3u8Url || networkM3u8Url;
 
     logOnce(
@@ -920,8 +1107,10 @@
       console.debug,
       `Video detected (gif=${isGif}, mp4=${Boolean(mp4Url)}, m3u8=${Boolean(
         m3u8Url
-      )}, networkM3u8=${Boolean(networkM3u8Url)}, blob=${Boolean(blobUrls.length)}).`,
-      { video, tweetId }
+      )}, networkM3u8=${Boolean(networkM3u8Url)}, networkM4s=${Boolean(
+        networkSegments?.segmentUrls.length
+      )}, blob=${Boolean(blobUrls.length)}).`,
+      { video, tweetId, networkM4s: networkSegments?.segmentUrls.length ?? 0 }
     );
 
     logOnce(
@@ -1006,6 +1195,24 @@
         console.info(`${LOG_PREFIX} Added MP4 download button from network playlist.`, {
           video,
           resolvedM3u8Url
+        });
+        return;
+      }
+
+      if (networkSegments) {
+        const hlsButton = createButton({
+          label: "Download MP4",
+          title: "Download this X video as an MP4 file (segments captured from network activity).",
+          onClick: (button) => handleSegmentDownload(video, button, networkSegments),
+          type: "hls"
+        });
+        const actionItem = createActionItem(hlsButton);
+
+        insertActionItem(actionPanel, actionItem);
+        video.dataset[HLS_PROCESSED_MARKER] = "true";
+        console.info(`${LOG_PREFIX} Added MP4 download button from network segments.`, {
+          video,
+          segmentCount: networkSegments.segmentUrls.length
         });
         return;
       }
