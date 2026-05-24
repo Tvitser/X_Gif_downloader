@@ -98,6 +98,7 @@
       return null;
     }
 
+    // Tweet IDs are long, but keep a low minimum to support legacy URLs and avoid tiny numeric matches.
     const match =
       url.match(/\/(?:amplify_video|ext_tw_video|tweet_video|video)\/(\d{5,})/i) ||
       url.match(/\/status\/(\d{5,})/i);
