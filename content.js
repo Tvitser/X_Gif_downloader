@@ -106,22 +106,31 @@
   }
 
   function getTweetId(scope) {
-    if (!scope) {
-      return null;
-    }
+    let node = scope;
 
-    const anchors = scope.querySelectorAll?.('a[href*="/status/"]') ?? [];
+    while (node) {
+      const anchors = node.querySelectorAll?.('a[href*="/status/"]') ?? [];
 
-    for (const anchor of anchors) {
-      const href = anchor.getAttribute("href") || anchor.href || "";
-      const tweetId = extractTweetIdFromUrl(href);
+      for (const anchor of anchors) {
+        const href = anchor.getAttribute("href") || anchor.href || "";
+        const tweetId = extractTweetIdFromUrl(href);
 
-      if (tweetId) {
-        return tweetId;
+        if (tweetId) {
+          return tweetId;
+        }
       }
+
+      if (node === document.body) {
+        break;
+      }
+
+      node = node.parentElement;
     }
 
-    return null;
+    const canonicalUrl =
+      document.querySelector?.('link[rel="canonical"]')?.getAttribute("href") || window.location.href;
+
+    return extractTweetIdFromUrl(canonicalUrl);
   }
 
   function getPostScope(video) {
