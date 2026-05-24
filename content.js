@@ -31,6 +31,8 @@
   const POST_HAS_MEDIA_MARKER = "xgifDownloadPostHasMedia";
   const MEDIA_CANDIDATES_MARKER = "xgifDownloadMediaCandidatesLogged";
   const BLOB_PENDING_MARKER = "xgifDownloadBlobPending";
+  const BLOB_URL_LOGGED_MARKER = "xgifDownloadBlobUrlNotDownloadable";
+  const BLOB_ONLY_LOGGED_MARKER = "xgifDownloadBlobOnlyDetected";
   const ACTION_PANEL_TEST_ID_SELECTORS = [
     '[data-testid="reply"]',
     '[data-testid="comment"]',
@@ -98,7 +100,7 @@
       return null;
     }
 
-    // Tweet IDs are long, but keep a low minimum to support legacy URLs and avoid tiny numeric matches.
+    // Tweet IDs are long, but allow 5+ digits to avoid matching unrelated short numbers.
     const match =
       url.match(/\/(?:amplify_video|ext_tw_video|tweet_video|video)\/(\d{5,})/i) ||
       url.match(/\/status\/(\d{5,})/i);
@@ -1134,7 +1136,7 @@
     if (blobUrls.length > 0) {
       logOnce(
         video,
-        "xgifDownloadBlobUrlNotDownloadable",
+        BLOB_URL_LOGGED_MARKER,
         console.debug,
         `Blob URL detected: ${blobUrls[0]}. Blob URLs are browser-internal memory references and cannot be downloaded. The video source may need to be captured directly from the network before X converts it to a blob.`,
         video
@@ -1242,12 +1244,12 @@
         return;
       }
 
-      // Blob URLs are browser-only references, so wait for network-captured sources when no direct URL exists.
+      // Blob URLs are browser-only references, so mark as pending and rely on network capture rescans.
       if (blobUrls.length > 0) {
         video.dataset[BLOB_PENDING_MARKER] = "true";
         logOnce(
           video,
-          "xgifDownloadBlobOnlyDetected",
+          BLOB_ONLY_LOGGED_MARKER,
           console.info,
           `Media detected with blob URLs only (waiting for network playlist). Post has ${blobUrls.length} blob URL(s).`,
           video
