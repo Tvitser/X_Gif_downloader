@@ -245,7 +245,7 @@
         .forEach((entry) => recordNetworkMedia(entry.name));
     } catch (error) {
       console.debug(
-        `${LOG_PREFIX} Unable to read performance entries for network detection; HLS detection may be limited.`,
+        `${LOG_PREFIX} Unable to read performance entries for network playlist detection; HLS detection may be limited. This can happen in cross-origin contexts or when the Performance API is restricted.`,
         error
       );
     }
